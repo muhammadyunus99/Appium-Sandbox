@@ -1,4 +1,4 @@
-name: Appium Tests
+name: Appium Android Tests
 
 on:
   push:
@@ -7,71 +7,55 @@ on:
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 
 jobs:
-  test:
+  appium-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 180  # Increase timeout to 3 hours
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      # Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Set up JDK 21
-      uses: actions/setup-java@v3
-      with:
-        java-version: '21'
-        distribution: 'temurin'
+      # Set up Java (required for Android SDK and Maven)
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: "21"
+          distribution: "temurin"
 
-    - name: Install Node.js 20
-      uses: actions/setup-node@v3
-      with:
-        node-version: '20'
+      # Start Docker Android emulator with Appium
+      - name: Start Docker Android Emulator
+        run: |
+          docker pull budtmo/docker-android:emulator_11.0
+          docker run -d \
+            --name android-emulator \
+            -p 4723:4723 \  # Appium port
+            -p 5554:5554 \  # Emulator port
+            -e DEVICE="Pixel 5" \  # Emulator device name
+            -e APPIUM=true \  # Enable Appium
+            --privileged \  # Required for Android emulator
+            budtmo/docker-android:emulator_11.0
 
-    - name: Install Maven
-      run: sudo apt-get install -y maven
+      # Wait for the emulator to boot
+      - name: Wait for Emulator to Boot
+        run: |
+          docker exec android-emulator wait-for-emulator
+          docker exec android-emulator adb devices
 
-    - name: Verify Maven installation
-      run: mvn -version
+      # Install Maven
+      - name: Set up Maven
+        uses: stCarolas/setup-maven@v4
+        with:
+          maven-version: "3.8.6"
 
-    - name: Install Appium
-      run: npm install -g appium
+      # Run Appium tests using Maven
+      - name: Run Appium Tests
+        run: |
+          mvn clean test
 
-    - name: Set up Android SDK
-      uses: android-actions/setup-android@v2
-
-    - name: Accept Android licenses
-      run: |
-        yes | sdkmanager --licenses
-
-    - name: Install Android emulator
-      run: |
-        sdkmanager "system-images;android-28;google_apis;x86"
-        sdkmanager "emulator"
-        sdkmanager "platform-tools"
-
-    - name: Create Android emulator
-      run: |
-        avdmanager create avd -n test_emulator -k "system-images;android-28;google_apis;x86" -d "pixel_xl" --force
-
-    - name: Start Android emulator with snapshot
-      run: |
-        emulator -avd test_emulator -no-audio -no-window -no-snapshot-save -snapshot ci_snapshot &
-        adb wait-for-device
-        adb shell input keyevent 82
-
-    - name: Debug emulator status
-      run: |
-        adb devices
-        adb logcat
-
-    - name: Start Appium server
-      run: appium &
-      env:
-        APPIUM_PORT: 4723
-
-    - name: Run Maven tests
-      run: mvn test
-      env:
-        APPIUM_URL: http://localhost:4723/wd/hub
+      # Stop and remove the Docker container
+      - name: Clean up Docker container
+        if: always()
+        run: |
+          docker stop android-emulator
+          docker rm android-emulator
