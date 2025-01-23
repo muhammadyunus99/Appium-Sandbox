@@ -7,11 +7,12 @@ on:
   pull_request:
     branches:
       - main
-  workflow_dispatch:  # Enable manual triggering
+  workflow_dispatch:
 
 jobs:
   test:
-    runs-on: ubuntu-latest  # Use Ubuntu for better emulator support
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # Increase timeout to 3 hours
 
     steps:
     - name: Checkout repository
@@ -46,19 +47,24 @@ jobs:
 
     - name: Install Android emulator
       run: |
-        sdkmanager "system-images;android-30;google_apis;x86_64"
+        sdkmanager "system-images;android-28;google_apis;x86"
         sdkmanager "emulator"
         sdkmanager "platform-tools"
 
     - name: Create Android emulator
       run: |
-        avdmanager create avd -n test_emulator -k "system-images;android-30;google_apis;x86_64" -d "pixel_xl" --force
+        avdmanager create avd -n test_emulator -k "system-images;android-28;google_apis;x86" -d "pixel_xl" --force
 
-    - name: Start Android emulator
+    - name: Start Android emulator with snapshot
       run: |
-        emulator -avd test_emulator -no-audio -no-window -no-snapshot -no-boot-anim &
+        emulator -avd test_emulator -no-audio -no-window -no-snapshot-save -snapshot ci_snapshot &
         adb wait-for-device
         adb shell input keyevent 82
+
+    - name: Debug emulator status
+      run: |
+        adb devices
+        adb logcat
 
     - name: Start Appium server
       run: appium &
